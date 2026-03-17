@@ -1,67 +1,111 @@
 import { Request, Response } from 'express';
-import { UploadRecord, UploadType, VALID_TYPES, StoredRecord, UploadResponse } from './types';
+import {
+  StatusReportRequest, StatusReportResponse,
+  RuleFeedbackRequest, RulesResponse,
+  SnapshotEntry, StateChainEntry, StoredRecord
+} from './types';
 import { appendRecords } from './storage';
 
-export function handleUpload(req: Request, res: Response): void {
+/**
+ * POST /api/v1/status/report
+ * 接收状态上报 — 对齐 llm_rule_service 格式
+ *
+ * Body: { deviceId, snapshots: [{timestamp, signals}], statechain?: [{timestamp, chain}] }
+ */
+export function handleStatusReport(req: Request, res: Response): void {
   const now = new Date().toISOString();
-  const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
-  console.log(`[${now}] [upload] incoming request from ${clientIp}, content-length=${req.headers['content-length'] || '?'}`);
+  const body = req.body as StatusReportRequest;
 
-  const body = req.body;
-
-  if (!Array.isArray(body) || body.length === 0) {
-    console.log(`[${now}] [upload] REJECTED: body is not a non-empty array, type=${typeof body}`);
-    res.status(400).json({ success: false, error: 'Body must be a non-empty array' });
+  if (!body.deviceId || !body.snapshots) {
+    console.log(`[${now}] [report] REJECTED: missing deviceId or snapshots`);
+    res.status(400).json({ success: false, error: 'Missing deviceId or snapshots' });
     return;
   }
 
-  const grouped: Partial<Record<UploadType, StoredRecord[]>> = {};
-  let received = 0;
+  const deviceId = body.deviceId;
+  const receivedAt = Date.now();
 
-  for (const record of body as UploadRecord[]) {
-    if (!VALID_TYPES.includes(record.type)) {
-      continue;
-    }
+  // Store snapshots → datatray JSONL
+  let snapshotCount = 0;
+  if (Array.isArray(body.snapshots) && body.snapshots.length > 0) {
+    const records: StoredRecord[] = body.snapshots.map((s: SnapshotEntry) => ({
+      deviceId,
+      timestamp: s.timestamp,
+      receivedAt,
+      data: s.signals,
+    }));
+    appendRecords('datatray', records);
+    snapshotCount = records.length;
 
-    const stored: StoredRecord = {
-      uploadId: record.uploadId,
-      deviceId: record.deviceId,
-      timestamp: record.timestamp,
-      receivedAt: Date.now(),
-      payload: record.payload,
-    };
-
-    if (!grouped[record.type]) {
-      grouped[record.type] = [];
-    }
-    grouped[record.type]!.push(stored);
-    received++;
+    const firstKeys = Object.keys(body.snapshots[0].signals || {});
+    console.log(`[${now}] [report] datatray: ${snapshotCount} snapshots, first keys=[${firstKeys.slice(0, 10).join(',')}${firstKeys.length > 10 ? ',...' : ''}]`);
   }
 
-  const breakdown = {} as Record<UploadType, number>;
+  // Store statechain → statechain JSONL
+  let statechainCount = 0;
+  if (Array.isArray(body.statechain) && body.statechain.length > 0) {
+    const records: StoredRecord[] = body.statechain.map((s: StateChainEntry) => ({
+      deviceId,
+      timestamp: s.timestamp,
+      receivedAt,
+      data: s.chain,
+    }));
+    appendRecords('statechain', records);
+    statechainCount = records.length;
 
-  for (const type of VALID_TYPES) {
-    const records = grouped[type];
-    if (records && records.length > 0) {
-      appendRecords(type, records);
-      breakdown[type] = records.length;
-    } else {
-      breakdown[type] = 0;
-    }
+    const firstChain = body.statechain[0].chain || {};
+    console.log(`[${now}] [report] statechain: ${statechainCount} entries, first chainId=${(firstChain as Record<string, unknown>)['chainId'] ?? '?'}`);
   }
 
-  const response: UploadResponse = { success: true, received, breakdown };
+  const response: StatusReportResponse = {
+    success: true,
+    received: { snapshots: snapshotCount, statechain: statechainCount },
+  };
 
-  // Log each type's first record for debugging
-  for (const type of VALID_TYPES) {
-    const records = grouped[type];
-    if (records && records.length > 0) {
-      const first = records[0];
-      const payloadKeys = Object.keys(first.payload);
-      console.log(`[${now}] [upload] ${type}: ${records.length} records, first payload keys=[${payloadKeys.join(',')}]`);
-    }
-  }
-
-  console.log(`[${now}] [upload] OK: received=${received} breakdown=${JSON.stringify(breakdown)} deviceId=${(body[0] as UploadRecord)?.deviceId || '?'}`);
+  console.log(`[${now}] [report] OK: deviceId=${deviceId} snapshots=${snapshotCount} statechain=${statechainCount}`);
   res.status(200).json(response);
+}
+
+/**
+ * GET /api/v1/rules?deviceId=xxx
+ * 拉取规则 — 占位，返回空列表
+ */
+export function handleGetRules(req: Request, res: Response): void {
+  const deviceId = req.query['deviceId'] || 'unknown';
+  console.log(`[${new Date().toISOString()}] [rules] GET rules for deviceId=${deviceId} (placeholder, returning empty)`);
+
+  const response: RulesResponse = {
+    rules: [],
+    serverTime: Date.now(),
+  };
+  res.status(200).json(response);
+}
+
+/**
+ * POST /api/v1/rules/feedback
+ * 规则反馈 — 占位，记录到 feedback JSONL
+ */
+export function handleRuleFeedback(req: Request, res: Response): void {
+  const now = new Date().toISOString();
+  const body = req.body as RuleFeedbackRequest;
+
+  if (!body.deviceId || !body.ruleId) {
+    res.status(400).json({ success: false, error: 'Missing deviceId or ruleId' });
+    return;
+  }
+
+  const record: StoredRecord = {
+    deviceId: body.deviceId,
+    timestamp: body.timestamp || Date.now(),
+    receivedAt: Date.now(),
+    data: {
+      ruleId: body.ruleId,
+      errorType: body.errorType,
+      detail: body.detail,
+    },
+  };
+
+  appendRecords('feedback', [record]);
+  console.log(`[${now}] [feedback] ruleId=${body.ruleId} errorType=${body.errorType} deviceId=${body.deviceId}`);
+  res.status(200).json({ success: true });
 }

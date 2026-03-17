@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { StoredRecord, UploadType } from './types';
+import { StoredRecord, StorageType } from './types';
 
 export const DATA_DIR = path.join(__dirname, '..', 'data');
 
@@ -10,7 +10,7 @@ export function ensureDataDir(): void {
   }
 }
 
-export function getFileName(type: UploadType): string {
+function getFileName(type: StorageType): string {
   const now = new Date();
   const yyyy = now.getFullYear();
   const mm = String(now.getMonth() + 1).padStart(2, '0');
@@ -18,7 +18,7 @@ export function getFileName(type: UploadType): string {
   return `${type}-${yyyy}-${mm}-${dd}.jsonl`;
 }
 
-export function appendRecords(type: UploadType, records: StoredRecord[]): void {
+export function appendRecords(type: StorageType, records: StoredRecord[]): void {
   ensureDataDir();
   const filePath = path.join(DATA_DIR, getFileName(type));
   const lines = records.map((r) => JSON.stringify(r)).join('\n') + '\n';
