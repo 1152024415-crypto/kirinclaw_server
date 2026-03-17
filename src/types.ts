@@ -1,6 +1,6 @@
-export type UploadType = 'datatray' | 'rulechain' | 'suggestion' | 'feedback';
+export type UploadType = 'datatray' | 'statechain' | 'suggestion';
 
-export const VALID_TYPES: UploadType[] = ['datatray', 'rulechain', 'suggestion', 'feedback'];
+export const VALID_TYPES: UploadType[] = ['datatray', 'statechain', 'suggestion'];
 
 export interface UploadRecord {
   uploadId: string;
