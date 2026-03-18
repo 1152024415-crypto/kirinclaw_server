@@ -109,3 +109,17 @@ export function handleRuleFeedback(req: Request, res: Response): void {
   console.log(`[${now}] [feedback] ruleId=${body.ruleId} errorType=${body.errorType} deviceId=${body.deviceId}`);
   res.status(200).json({ success: true });
 }
+
+/**
+ * POST /api/v1/rules/describe
+ * 自然语言→规则 — Phase 2 占位
+ */
+export function handleDescribeRule(req: Request, res: Response): void {
+  const body = req.body as { deviceId?: string; description?: string };
+  console.log(`[${new Date().toISOString()}] [describe] deviceId=${body.deviceId || '?'} description="${body.description || ''}"`);
+
+  res.status(501).json({
+    success: false,
+    error: 'Not implemented — Phase 2 feature. Requires LLM integration.',
+  });
+}
